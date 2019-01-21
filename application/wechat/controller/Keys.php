@@ -38,35 +38,44 @@ class Keys extends BasicAdmin
     /**
      * 显示关键字列表
      * @return array|string
+     * @throws \WeChat\Exceptions\InvalidResponseException
+     * @throws \WeChat\Exceptions\LocalCacheException
+     * @throws \think\Exception
      * @throws \think\db\exception\DataNotFoundException
      * @throws \think\db\exception\ModelNotFoundException
      * @throws \think\exception\DbException
-     * @throws \think\Exception
      */
     public function index()
     {
-        $this->assign('title', '微信关键字');
+        // 关键字二维码显示
+        if ($this->request->get('action') === 'qrc') {
+            $wechat = WechatService::WeChatQrcode();
+            $result = $wechat->create($this->request->get('keys', ''));
+            $this->redirect($wechat->url($result['ticket']));
+        }
+        // 显示关键字列表
+        $this->title = '微信关键字管理';
         $db = Db::name($this->table)->whereNotIn('keys', ['subscribe', 'default']);
-        return $this->_list($db->order('id desc'));
+        return $this->_list($db->order('sort asc,id desc'));
     }
 
     /**
      * 列表数据处理
      * @param array $data
-     * @throws \WeChat\Exceptions\InvalidResponseException
-     * @throws \WeChat\Exceptions\LocalCacheException
      */
     protected function _index_data_filter(&$data)
     {
-        $types = [
-            'keys'  => '关键字', 'image' => '图片', 'news' => '图文',
-            'music' => '音乐', 'text' => '文字', 'video' => '视频', 'voice' => '语音',
-        ];
-        $wechat = WechatService::qrcode();
-        foreach ($data as &$vo) {
-            $result = $wechat->create($vo['keys']);
-            $vo['qrc'] = $wechat->url($result['ticket']);
-            $vo['type'] = isset($types[$vo['type']]) ? $types[$vo['type']] : $vo['type'];
+        try {
+            $types = [
+                'keys'  => '关键字', 'image' => '图片', 'news' => '图文',
+                'music' => '音乐', 'text' => '文字', 'video' => '视频', 'voice' => '语音',
+            ];
+            foreach ($data as &$vo) {
+                $vo['qrc'] = url('@wechat/keys/index') . "?action=qrc&keys={$vo['keys']}";
+                $vo['type'] = isset($types[$vo['type']]) ? $types[$vo['type']] : $vo['type'];
+            }
+        } catch (\Exception $e) {
+            $this->error($e->getMessage());
         }
     }
 
@@ -149,8 +158,7 @@ class Keys extends BasicAdmin
     public function subscribe()
     {
         $this->assign('title', '编辑默认回复');
-        $extend = ['keys' => 'subscribe'];
-        return $this->_form($this->table, 'form', 'keys', $extend, $extend);
+        return $this->_form($this->table, 'form', 'keys', [], ['keys' => 'subscribe']);
     }
 
 
@@ -165,8 +173,7 @@ class Keys extends BasicAdmin
     public function defaults()
     {
         $this->assign('title', '编辑无配置默认回复');
-        $extend = ['keys' => 'default'];
-        return $this->_form($this->table, 'form', 'keys', $extend, $extend);
+        return $this->_form($this->table, 'form', 'keys', [], ['keys' => 'default']);
     }
 
     /**
@@ -178,7 +185,6 @@ class Keys extends BasicAdmin
         if ($this->request->isPost() && isset($data['keys'])) {
             $db = Db::name($this->table)->where('keys', $data['keys']);
             !empty($data['id']) && $db->where('id', 'neq', $data['id']);
-            $data['content'] = htmlspecialchars_decode($data['content']);
             $db->count() > 0 && $this->error('关键字已经存在，请使用其它关键字！');
         }
     }
